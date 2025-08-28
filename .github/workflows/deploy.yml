@@ -1,0 +1,28 @@
+name: Publish Demo GitHub Pages Site
+
+on:
+    push:
+        branches:
+            - main
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        if: contains(github.event.head_commit.message, 'deploy')
+        steps:
+            - uses: actions/checkout@v4
+            - name: Upload artifact
+              uses: actions/upload-pages-artifact@v3
+              with:
+                path: src
+
+    deploy:
+        runs-on: ubuntu-latest
+        environment:
+            name: github-pages
+            url: ${{ steps.deployment.outputs.page_url }}
+        needs: build
+        steps:
+            - name: Deploy to GH Pages
+              id: deployment
+              uses: actions/deploy-pages@v4
