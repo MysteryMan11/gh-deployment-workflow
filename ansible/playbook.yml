@@ -1,0 +1,105 @@
+- name: Configure node server and deploy app
+  hosts: all
+  become: true
+  vars:
+    app_dir: /opt/nodeapp
+    node_version: "18.x"
+    app_user: nodeapp
+
+  tasks:
+    - name: Ensure apt packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - build-essential
+        state: present
+        update_cache: yes
+
+    - name: Add NodeSource apt repo key
+      ansible.builtin.apt_key:
+        url: "https://deb.nodesource.com/gpgkey/nodesource.gpg.key"
+        state: present
+
+    - name: Add NodeSource repo
+      ansible.builtin.apt_repository:
+        repo: "deb https://deb.nodesource.com/node_{{ node_version }} $(lsb_release -cs) main"
+        state: present
+        filename: nodesource
+
+    - name: Update apt cache (again)
+      apt:
+        update_cache: yes
+
+    - name: Install Node.js
+      apt:
+        name:
+          - nodejs
+        state: present
+
+    - name: Ensure app user exists
+      user:
+        name: "{{ app_user }}"
+        comment: "App user for node service"
+        system: false
+        create_home: false
+        shell: /usr/sbin/nologin
+
+    - name: Create application directory
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0755'
+
+    - name: Copy application files
+      copy:
+        src: ../app/
+        dest: "{{ app_dir }}/"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: '0755'
+        recurse: yes
+
+    - name: Install npm dependencies (production)
+      command: npm install --production
+      args:
+        chdir: "{{ app_dir }}"
+
+    - name: Create systemd service for node app
+      copy:
+        dest: /etc/systemd/system/nodeapp.service
+        content: |
+          [Unit]
+          Description=Simple Node.js App
+          After=network.target
+
+          [Service]
+          Type=simple
+          User={{ app_user }}
+          WorkingDirectory={{ app_dir }}
+          ExecStart=/usr/bin/node {{ app_dir }}/index.js
+          Restart=on-failure
+          RestartSec=5
+          Environment=NODE_ENV=production
+
+          [Install]
+          WantedBy=multi-user.target
+      notify:
+        - reload systemd
+
+    - name: Enable and start nodeapp service
+      systemd:
+        name: nodeapp.service
+        state: started
+        enabled: yes
+
+    - name: Install Dokploy
+      command: curl -sSL https://dokploy.com/install.sh | sh
+
+  handlers:
+    - name: reload systemd
+      command: systemctl daemon-reload
