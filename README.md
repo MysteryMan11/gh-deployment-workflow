@@ -1,3 +1,3 @@
 # gh-deployment-workflow
 
-GitHub Actions Project
+Simple GitHub Pages Subpage Deployment
