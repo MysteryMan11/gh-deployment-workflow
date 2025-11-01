@@ -1,113 +1,114 @@
-# name: Publish Demo GitHub Pages Site
-
-# on:
-#     push:
-#         branches:
-#             - main
-#         paths:
-#             - 'src/**'
-
-# permissions:
-#   contents: read
-#   pages: write
-#   id-token: write
-
-# jobs:
-#     build:
-#         runs-on: ubuntu-latest
-#         if: contains(github.event.head_commit.message, 'deploy')
-#         steps:
-#             - uses: actions/checkout@v4
-#             - name: Upload artifact
-#               uses: actions/upload-pages-artifact@v3
-#               with:
-#                 path: src
-                
-#     deploy:
-#         if: contains(github.event.head_commit.message, 'deploy')
-#         runs-on: ubuntu-latest
-#         environment:
-    #             name: github-pages
-    #             url: ${{ steps.deployment.outputs.page_url }}
-#         needs: build
-#         steps:
-    #             - name: Deploy to GH Pages
-    #               id: deployment
-#               uses: actions/deploy-pages@v4
-
-name: infra-deploy-linode
+name: Publish Demo GitHub Pages Site
 
 on:
   push:
-    branches: ["main"]
+    branches:
+      - main
+    paths:
+      - 'src/**'
 
 permissions:
   contents: read
-  
+  pages: write
+  id-token: write
+
 jobs:
-  terraform_apply:
+  build:
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.message, 'deploy')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: src
+                
+  deploy:
     if: contains(github.event.head_commit.message, 'deploy')
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    needs: build
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Deploy to GH Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: 1.5.7
+# name: infra-deploy-linode
 
-      - name: Export TF vars
-        run: |
-          echo "TF_VAR_linode_token=${{ secrets.LINODE_TOKEN }}" >> $GITHUB_ENV
-          echo "TF_VAR_ssh_public_key<<EOF" >> $GITHUB_ENV
-          echo "${{ secrets.SSH_PUBLIC_KEY }}" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-          echo "TF_VAR_root_pass=${{ secrets.LINODE_ROOT_PASS }}" >> $GITHUB_ENV
+# on:
+#   push:
+#     branches: ["main"]
 
-      - name: Terraform init
-        working-directory: terraform
-        run: terraform init -input=false
+# permissions:
+#   contents: read
+  
+# jobs:
+#   terraform_apply:
+#     if: contains(github.event.head_commit.message, 'deploy')
+#     runs-on: ubuntu-latest
+#     timeout-minutes: 60
 
-      - name: Terraform apply (create Linode + firewall)
-        working-directory: terraform
-        run: terraform apply -auto-approve -input=false
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v4
 
-      - name: Get instance IP
-        id: tfout
-        working-directory: terraform
-        run: echo "instance_ip=$(terraform output -raw instance_ip)" >> $GITHUB_OUTPUT
+#       - name: Setup Terraform
+#         uses: hashicorp/setup-terraform@v2
+#         with:
+#           terraform_version: 1.5.7
 
-      - name: Wait for SSH to become available
-        run: |
-          IP="${{ steps.tfout.outputs.instance_ip }}"
-          echo "Waiting for SSH on $IP ..."
-          for i in $(seq 1 30); do
-            ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -i /tmp/act_key root@"${IP}" exit 2>/dev/null && break
-            echo "SSH not ready, attempt $i/30; sleeping 5s"
-            sleep 5
-          done
-        env:
-          # write private key to temporary file (will be created by next step)
-          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+#       - name: Export TF vars
+#         run: |
+#           echo "TF_VAR_linode_token=${{ secrets.LINODE_TOKEN }}" >> $GITHUB_ENV
+#           echo "TF_VAR_ssh_public_key<<EOF" >> $GITHUB_ENV
+#           echo "${{ secrets.SSH_PUBLIC_KEY }}" >> $GITHUB_ENV
+#           echo "EOF" >> $GITHUB_ENV
+#           echo "TF_VAR_root_pass=${{ secrets.LINODE_ROOT_PASS }}" >> $GITHUB_ENV
 
-      - name: Add SSH key to agent (and temporary file)
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+#       - name: Terraform init
+#         working-directory: terraform
+#         run: terraform init -input=false
 
-      - name: Install Python & Ansible
-        run: |
-          python3 -m pip install --upgrade pip
-          pip install ansible==8.9.0
+#       - name: Terraform apply (create Linode + firewall)
+#         working-directory: terraform
+#         run: terraform apply -auto-approve -input=false
 
-      - name: Create inventory for Ansible
-        run: |
-          echo "[all]" > inventory.ini
-          echo "${{ steps.tfout.outputs.instance_ip }} ansible_user=root ansible_ssh_common_args='-o StrictHostKeyChecking=no' " >> inventory.ini
-          cat inventory.ini
+#       - name: Get instance IP
+#         id: tfout
+#         working-directory: terraform
+#         run: echo "instance_ip=$(terraform output -raw instance_ip)" >> $GITHUB_OUTPUT
 
-      - name: Run Ansible playbook (deploy app)
-        run: ansible-playbook -i inventory.ini ansible/playbook.yml -u root --ssh-common-args='-o StrictHostKeyChecking=no'
+#       - name: Wait for SSH to become available
+#         run: |
+#           IP="${{ steps.tfout.outputs.instance_ip }}"
+#           echo "Waiting for SSH on $IP ..."
+#           for i in $(seq 1 30); do
+#             ssh -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no -i /tmp/act_key root@"${IP}" exit 2>/dev/null && break
+#             echo "SSH not ready, attempt $i/30; sleeping 5s"
+#             sleep 5
+#           done
+#         env:
+#           # write private key to temporary file (will be created by next step)
+#           SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+
+#       - name: Add SSH key to agent (and temporary file)
+#         uses: webfactory/ssh-agent@v0.9.0
+#         with:
+#           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+#       - name: Install Python & Ansible
+#         run: |
+#           python3 -m pip install --upgrade pip
+#           pip install ansible==8.9.0
+
+#       - name: Create inventory for Ansible
+#         run: |
+#           echo "[all]" > inventory.ini
+#           echo "${{ steps.tfout.outputs.instance_ip }} ansible_user=root ansible_ssh_common_args='-o StrictHostKeyChecking=no' " >> inventory.ini
+#           cat inventory.ini
+
+#       - name: Run Ansible playbook (deploy app)
+#         run: ansible-playbook -i inventory.ini ansible/playbook.yml -u root --ssh-common-args='-o StrictHostKeyChecking=no'
+
